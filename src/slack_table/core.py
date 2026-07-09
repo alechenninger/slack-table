@@ -31,9 +31,9 @@ def render(text: str, input_format: str = "auto") -> str:
 def parse_table(text: str, input_format: str = "auto") -> Table:
     """Parse text as a table.
 
-    Supported input formats are ``auto``, ``markdown``, ``csv``, ``tsv``, and
-    ``pipe``. The parser list is intentionally small and explicit so new formats
-    can be added without touching the Slack renderer.
+    Supported input formats are ``auto``, ``markdown``, ``csv``, ``tsv``,
+    ``pipe``, and ``cursor``. The parser list is intentionally small and
+    explicit so new formats can be added without touching the Slack renderer.
     """
 
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
@@ -42,6 +42,7 @@ def parse_table(text: str, input_format: str = "auto") -> Table:
 
     parsers = {
         "markdown": _parse_markdown,
+        "cursor": _parse_cursor_canvas,
         "csv": _parse_csv,
         "tsv": _parse_tsv,
         "pipe": _parse_pipe,
@@ -55,7 +56,13 @@ def parse_table(text: str, input_format: str = "auto") -> Table:
             raise ParseError(f"unknown input format {input_format!r}; expected {names}") from exc
         return parser(text)
 
-    for parser in (_parse_markdown, _parse_tsv, _parse_csv, _parse_pipe):
+    for parser in (
+        _parse_markdown,
+        _parse_cursor_canvas,
+        _parse_tsv,
+        _parse_csv,
+        _parse_pipe,
+    ):
         try:
             return parser(text)
         except ParseError:
@@ -133,11 +140,65 @@ def _parse_tsv(text: str) -> Table:
     return _parse_delimited(text, "tsv", lambda data: csv.reader(data, delimiter="\t"))
 
 
+def _parse_cursor_canvas(text: str) -> Table:
+    if "\t" not in text:
+        raise ParseError("no cursor canvas tab fragments found")
+
+    rows = _read_delimited_rows(text, "cursor", lambda data: csv.reader(data, delimiter="\t"))
+    if len(rows) < 3:
+        raise ParseError("cursor canvas input needs a header and fragmented rows")
+
+    column_count = len(rows[0])
+    if column_count < 3:
+        raise ParseError("cursor canvas header must have at least three columns")
+
+    body = rows[1:]
+    has_wrapped_row = any(len(row) != column_count for row in body)
+    if not has_wrapped_row:
+        raise ParseError("no wrapped cursor canvas rows found")
+
+    logical_rows: List[List[str]] = [rows[0]]
+    pending: List[str] = []
+    for row in body:
+        if len(row) > column_count:
+            raise ParseError("cursor canvas row has too many columns")
+
+        if not pending and len(row) == column_count:
+            logical_rows.append(row)
+            continue
+
+        if len(pending) + len(row) > column_count:
+            raise ParseError("cursor canvas fragments do not align to the header")
+
+        pending.extend(row)
+        if len(pending) == column_count:
+            logical_rows.append(pending)
+            pending = []
+
+    if pending:
+        raise ParseError("cursor canvas fragments ended before a row was complete")
+
+    return Table(rows=_normalized(logical_rows, column_count), source_format="cursor")
+
+
 def _parse_delimited(
     text: str,
     source_format: str,
     reader_factory: Callable[[io.StringIO], Iterable[Sequence[str]]],
 ) -> Table:
+    rows = _read_delimited_rows(text, source_format, reader_factory)
+
+    if max(len(row) for row in rows) < 2:
+        raise ParseError(f"{source_format} input must have at least two columns")
+
+    return Table(rows=_normalized(rows), source_format=source_format)
+
+
+def _read_delimited_rows(
+    text: str,
+    source_format: str,
+    reader_factory: Callable[[io.StringIO], Iterable[Sequence[str]]],
+) -> List[List[str]]:
     try:
         rows = [
             [_clean_cell(cell) for cell in row]
@@ -149,10 +210,7 @@ def _parse_delimited(
 
     if not rows:
         raise ParseError(f"no {source_format} rows found")
-    if max(len(row) for row in rows) < 2:
-        raise ParseError(f"{source_format} input must have at least two columns")
-
-    return Table(rows=_normalized(rows), source_format=source_format)
+    return rows
 
 
 def _non_empty_lines(text: str) -> List[str]:

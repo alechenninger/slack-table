@@ -1,7 +1,10 @@
 # slack-table
 
-Convert Markdown, CSV, TSV, or simple pipe-delimited tables into tab-separated
-rows that Slack pastes as a native table.
+Convert Markdown, CSV, TSV, Cursor canvas, or simple pipe-delimited tables into
+tab-separated rows that Slack pastes as a native table.
+
+It can also extract a table from an image using local Tesseract OCR, then render
+the same Slack-native TSV.
 
 Slack's Block Kit table block is represented well by copied tab-separated rows:
 copying a rendered table from Block Kit Builder produces TSV, and pasting TSV
@@ -24,6 +27,9 @@ slack-table --wait -q
 
 # Read a file.
 slack-table table.md
+
+# Extract a table from an image.
+slack-table --image table.png
 ```
 
 Example input:
@@ -48,7 +54,17 @@ Paste that into Slack to get a native Slack table.
 ## Install locally
 
 ```sh
+brew install tesseract
 python3 -m pip install -e .
+```
+
+With `pipx`, install Tesseract first and then install or reinstall the app so
+the `tesserocr` dependency is added to the `pipx` environment:
+
+```sh
+brew install tesseract
+pipx uninstall slack-table
+pipx install -e .
 ```
 
 You can also run it without installing:
@@ -59,12 +75,34 @@ PYTHONPATH=/path/to/slack-table/src python3 -m slack_table < table.md
 
 ## Input Formats
 
-`slack-table` auto-detects Markdown tables, TSV, CSV, and simple pipe-delimited
-rows. Use `--input markdown`, `--input csv`, `--input tsv`, or `--input pipe` to
-force a parser.
+`slack-table` auto-detects Markdown tables, Cursor canvas copies, TSV, CSV, and
+simple pipe-delimited rows. Use `--input markdown`, `--input cursor`,
+`--input csv`, `--input tsv`, or `--input pipe` to force a parser.
 
 Piped input and file input write TSV to stdout by default. Interactive clipboard
 input and `--wait` copy the converted TSV back to the clipboard by default.
+
+Image input uses `--image path/to/table.png` and runs locally. Supported image
+files are PNG, JPEG, WEBP, and GIF. On macOS, the interactive clipboard modes
+also detect an image on the clipboard automatically, so copying a table
+screenshot and running `slack-table` or `slack-table --wait -q` works without
+writing the image to a file first. Other operating systems report that image
+clipboard input is unsupported.
+
+Image OCR uses the `tesserocr` Python package, which is installed with
+`slack-table`. Install Tesseract's native libraries before installing the
+package. If embedded OCR is unavailable at runtime, `slack-table --image` falls
+back to the `tesseract` command on `PATH`.
+
+```sh
+# Force embedded OCR or the command-line fallback.
+slack-table --image table.png --image-engine tesserocr
+slack-table --image table.png --image-engine tesseract
+```
+
+Use `--image-lang` to choose Tesseract languages, for example `eng+fra`, and
+`--image-psm` to tune page segmentation mode. The default page segmentation mode
+is `6`, which works well for many simple table screenshots.
 
 ## Shortcut
 

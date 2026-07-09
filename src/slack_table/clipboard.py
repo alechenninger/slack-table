@@ -6,7 +6,8 @@ import platform
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 
 class ClipboardError(RuntimeError):
@@ -55,6 +56,10 @@ def available() -> bool:
     return _detect_commands() is not None
 
 
+def image_supported() -> bool:
+    return platform.system().lower() == "darwin" and shutil.which("osascript") is not None
+
+
 def read() -> str:
     commands = _detect_commands()
     if commands is None:
@@ -77,6 +82,68 @@ def read() -> str:
     return result.stdout
 
 
+def read_image(path: Union[str, Path]) -> None:
+    if platform.system().lower() != "darwin":
+        raise ClipboardError("clipboard image input is only supported on macOS")
+    if not shutil.which("osascript"):
+        raise ClipboardError("macOS clipboard image input requires osascript")
+
+    output_path = str(Path(path))
+    script = [
+        "on run argv",
+        "set outputPath to item 1 of argv",
+        "set openedFile to missing value",
+        "try",
+        "set imageData to the clipboard as «class PNGf»",
+        "set openedFile to open for access (POSIX file outputPath) with write permission",
+        "set eof of openedFile to 0",
+        "write imageData to openedFile",
+        "close access openedFile",
+        "on error errMsg number errNum",
+        "try",
+        "if openedFile is not missing value then close access openedFile",
+        "end try",
+        "error errMsg number errNum",
+        "end try",
+        "end run",
+    ]
+    command = ["osascript"]
+    for statement in script:
+        command.extend(["-e", statement])
+    command.append(output_path)
+
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        raise ClipboardError(str(exc)) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.strip() or exc.stdout.strip() or "no image found on clipboard"
+        raise ClipboardError(detail) from exc
+
+
+def signature() -> str:
+    if platform.system().lower() == "darwin" and shutil.which("osascript"):
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", "clipboard info"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            return result.stdout
+        except (OSError, subprocess.CalledProcessError):
+            pass
+
+    return read()
+
+
 def write(text: str) -> None:
     commands = _detect_commands()
     if commands is None:
@@ -96,4 +163,3 @@ def write(text: str) -> None:
     except subprocess.CalledProcessError as exc:
         detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
         raise ClipboardError(detail) from exc
-

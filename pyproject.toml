@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Convert pasted or piped tables into Slack-native table paste data."
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["tesserocr>=2.10"]
 
 [project.scripts]
 slack-table = "slack_table.cli:main"

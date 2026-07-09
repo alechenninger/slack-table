@@ -27,6 +27,51 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(format_tsv(parse_table(text)), "Name\tCount\nAlpha\t12")
 
+    def test_auto_detects_cursor_canvas_wrapped_tsv(self):
+        text = (
+            "Workload\tSystem A\tSystem B\tWinner\tDelta\n"
+            "Scenario A\n"
+            "10.0 ops/s \u00b7 100.0 ms/op\t20.0 ops/s \u00b7 50.0 ms/op\t\n"
+            "2.0x faster\n"
+            "Scenario B\n"
+            "8.0 ops/s \u00b7 125.0 ms/op\t4.0 ops/s \u00b7 250.0 ms/op\t\n"
+            "2.0x faster\n"
+        )
+
+        self.assertEqual(
+            render(text),
+            "Workload\tSystem A\tSystem B\tWinner\tDelta\n"
+            "Scenario A\t10.0 ops/s \u00b7 100.0 ms/op\t"
+            "20.0 ops/s \u00b7 50.0 ms/op\t\t2.0x faster\n"
+            "Scenario B\t8.0 ops/s \u00b7 125.0 ms/op\t"
+            "4.0 ops/s \u00b7 250.0 ms/op\t\t2.0x faster",
+        )
+
+    def test_auto_detects_single_cell_wrapped_tsv_rows(self):
+        text = (
+            "Scenario\tp50\tmean\tp95\n"
+            "Scenario A\n"
+            "2.2 ms\n"
+            "2.6 ms\n"
+            "5.5 ms\n"
+            "Scenario B\n"
+            "2.0 ms\n"
+            "2.1 ms\n"
+            "2.6 ms\n"
+            "Scenario C\n"
+            "3.1 ms\n"
+            "3.3 ms\n"
+            "5.3 ms\n"
+        )
+
+        self.assertEqual(
+            render(text),
+            "Scenario\tp50\tmean\tp95\n"
+            "Scenario A\t2.2 ms\t2.6 ms\t5.5 ms\n"
+            "Scenario B\t2.0 ms\t2.1 ms\t2.6 ms\n"
+            "Scenario C\t3.1 ms\t3.3 ms\t5.3 ms",
+        )
+
     def test_parses_escaped_markdown_pipes(self):
         table = parse_table(
             """
