@@ -1,4 +1,5 @@
 import argparse
+import io
 import unittest
 from unittest import mock
 
@@ -6,9 +7,33 @@ from slack_table import cli
 
 
 class CliTests(unittest.TestCase):
+    def test_output_selection_from_stdin(self):
+        for flags in ([], ["--output", "slack"], ["--output", "markdown"]):
+            with self.subTest(flags=flags):
+                with mock.patch.object(cli.sys, "stdin", io.StringIO("Name,Count\nAlpha,12")):
+                    with mock.patch.object(cli.sys, "stdout", new_callable=io.StringIO) as stdout:
+                        self.assertEqual(cli.main(flags), 0)
+                expected = (
+                    "| Name  | Count |\n| ----- | ----- |\n| Alpha | 12    |\n"
+                    if "markdown" in flags else "Name\tCount\nAlpha\t12\n"
+                )
+                self.assertEqual(stdout.getvalue(), expected)
+
+    def test_markdown_clipboard_workflows(self):
+        for flags in (["--copy"], ["--clipboard"], ["--wait"]):
+            with self.subTest(flags=flags):
+                table = cli.Table([["A", "B"], ["1", "2"]])
+                with mock.patch.object(cli, "_read_table", return_value=(table, flags != ["--copy"])):
+                    with mock.patch.object(cli.clipboard, "write") as write:
+                        with mock.patch.object(cli.sys, "stdout", new_callable=io.StringIO) as stdout:
+                            self.assertEqual(cli.main([*flags, "--output", "markdown", "-q"]), 0)
+                write.assert_called_once_with("| A   | B   |\n| --- | --- |\n| 1   | 2   |")
+                self.assertEqual(stdout.getvalue(), "")
+
     def test_copy_writes_tsv_to_clipboard(self):
         args = argparse.Namespace(
             input="csv",
+            output="slack",
             copy=True,
             quiet=True,
             files=[],
@@ -33,6 +58,7 @@ class CliTests(unittest.TestCase):
     def test_image_input_uses_image_extractor(self):
         args = argparse.Namespace(
             input="auto",
+            output="slack",
             copy=False,
             quiet=True,
             files=[],

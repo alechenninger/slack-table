@@ -1,9 +1,62 @@
 import unittest
 
-from slack_table.core import ParseError, format_table, format_tsv, parse_table, render
+from slack_table.core import ParseError, Table, format_markdown, format_table, format_tsv, parse_table, render
 
 
 class CoreTests(unittest.TestCase):
+    def test_renders_padded_markdown(self):
+        self.assertEqual(
+            render("Name,Count\nAlpha,12\nBeta,1000", output_format="markdown"),
+            "| Name  | Count |\n| ----- | ----- |\n| Alpha | 12    |\n| Beta  | 1000  |",
+        )
+
+    def test_markdown_sizes_each_column_to_its_longest_header_or_body_cell(self):
+        table = Table([
+            ["Description", "Owner", "ID"],
+            ["Short", "Al", "1"],
+            ["Task", "Alexandra", "42"],
+        ])
+
+        self.assertEqual(
+            format_markdown(table),
+            "| Description | Owner     | ID  |\n"
+            "| ----------- | --------- | --- |\n"
+            "| Short       | Al        | 1   |\n"
+            "| Task        | Alexandra | 42  |",
+        )
+
+    def test_markdown_keeps_short_and_empty_columns_at_least_three_characters_wide(self):
+        table = Table([["A", "", "C"], ["", "", "xy"], ["z", "", ""]])
+
+        self.assertEqual(
+            format_markdown(table),
+            "| A   |     | C   |\n"
+            "| --- | --- | --- |\n"
+            "|     |     | xy  |\n"
+            "| z   |     |     |",
+        )
+
+    def test_markdown_normalizes_ragged_rows_and_escapes_cells(self):
+        self.assertEqual(
+            format_markdown(Table([["A", "B"], ["x|y", "a\nb"], ["z"]])),
+            "| A    | B   |\n| ---- | --- |\n| x\\|y | a b |\n| z    |     |",
+        )
+        self.assertEqual(
+            format_markdown(Table([["A", "B"], ["\\", "x"]])),
+            "| A   | B   |\n| --- | --- |\n| \\\\  | x   |",
+        )
+
+    def test_markdown_header_only(self):
+        self.assertEqual(format_markdown(Table([["A", "B"]])), "| A   | B   |\n| --- | --- |")
+
+    def test_markdown_rejects_empty_table(self):
+        with self.assertRaises(ParseError):
+            format_markdown(Table([]))
+
+    def test_rejects_unknown_output_format(self):
+        with self.assertRaisesRegex(ParseError, "unknown output format"):
+            render("A,B", output_format="invalid")
+
     def test_renders_markdown_as_tsv_for_slack_native_tables(self):
         text = """
         | Header A | Header B |

@@ -1,4 +1,4 @@
-"""Parse text tables and render Slack-native table paste data."""
+"""Parse text tables and render Slack-native data or Markdown tables."""
 
 from __future__ import annotations
 
@@ -22,10 +22,10 @@ class Table:
 _SEPARATOR_RE = re.compile(r"^:?-{3,}:?$")
 
 
-def render(text: str, input_format: str = "auto") -> str:
-    """Parse text and return tab-separated rows for Slack native table paste."""
+def render(text: str, input_format: str = "auto", output_format: str = "slack") -> str:
+    """Parse text and format it for Slack (default) or Markdown."""
 
-    return format_tsv(parse_table(text, input_format))
+    return format_table(parse_table(text, input_format), output_format)
 
 
 def parse_table(text: str, input_format: str = "auto") -> Table:
@@ -80,10 +80,29 @@ def format_tsv(table: Table) -> str:
     return "\n".join("\t".join(_tsv_cell(cell) for cell in row) for row in rows)
 
 
-def format_table(table: Table) -> str:
-    """Alias for the Slack-native table representation."""
+def format_markdown(table: Table) -> str:
+    """Render a padded Markdown table, using the first row as the header."""
 
-    return format_tsv(table)
+    rows = _normalized(table.rows)
+    if not rows or not rows[0]:
+        raise ParseError("no table rows found")
+    rows = [[cell.replace("\\", "\\\\").replace("|", r"\|") for cell in row] for row in rows]
+    widths = [max(3, max(len(row[i]) for row in rows)) for i in range(len(rows[0]))]
+
+    def line(row: Sequence[str]) -> str:
+        return "| " + " | ".join(cell.ljust(width) for cell, width in zip(row, widths)) + " |"
+
+    return "\n".join([line(rows[0]), line(["-" * width for width in widths])] + [line(row) for row in rows[1:]])
+
+
+def format_table(table: Table, output_format: str = "slack") -> str:
+    """Render a table for Slack (default) or Markdown."""
+
+    if output_format == "slack":
+        return format_tsv(table)
+    if output_format == "markdown":
+        return format_markdown(table)
+    raise ParseError(f"unknown output format {output_format!r}; expected slack, markdown")
 
 
 def _parse_markdown(text: str) -> Table:

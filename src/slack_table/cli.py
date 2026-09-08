@@ -11,7 +11,7 @@ from typing import Iterable, Optional
 
 from . import __version__
 from . import clipboard
-from .core import ParseError, Table, format_tsv, parse_table
+from .core import ParseError, Table, format_table, parse_table
 from .image import DEFAULT_IMAGE_ENGINE, DEFAULT_IMAGE_LANG, DEFAULT_IMAGE_PSM, parse_image_table
 
 
@@ -25,13 +25,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     try:
         table, copy_by_default = _read_table(args)
-        output = format_tsv(table)
+        output = format_table(table, args.output)
         should_copy = args.copy or copy_by_default
 
         if should_copy:
             clipboard.write(output)
             if not args.quiet and sys.stderr.isatty():
-                print("Copied Slack-native table data to the clipboard.", file=sys.stderr)
+                label = "Markdown table" if args.output == "markdown" else "Slack-native table data"
+                print(f"Copied {label} to the clipboard.", file=sys.stderr)
 
         if not args.quiet:
             print(output)
@@ -50,7 +51,7 @@ ClipboardError = clipboard.ClipboardError
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="slack-table",
-        description="Convert pasted or piped tables to Slack-native table paste data.",
+        description="Convert pasted or piped tables to Slack-native data or Markdown tables.",
     )
     parser.add_argument("files", nargs="*", help="table files to read; omit for stdin or clipboard")
     parser.add_argument(
@@ -60,10 +61,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="input format to parse (default: auto)",
     )
     parser.add_argument(
+        "--output",
+        choices=["slack", "markdown"],
+        default="slack",
+        help="output format (default: slack)",
+    )
+    parser.add_argument(
         "-c",
         "--copy",
         action="store_true",
-        help="copy Slack-native table data to the clipboard",
+        help="copy the formatted table to the clipboard",
     )
     parser.add_argument(
         "--clipboard",

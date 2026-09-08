@@ -1,7 +1,8 @@
 # slack-table
 
 Convert Markdown, CSV, TSV, Cursor canvas, or simple pipe-delimited tables into
-tab-separated rows that Slack pastes as a native table.
+tab-separated rows that Slack pastes as a native table (default), or neatly
+formatted Markdown tables with `--output markdown`.
 
 It can also extract a table from an image using local Tesseract OCR, then render
 the same Slack-native TSV.
@@ -28,6 +29,10 @@ slack-table --wait -q
 # Read a file.
 slack-table table.md
 
+# Format as Markdown, or copy Markdown using the same clipboard workflow.
+slack-table table.csv --output markdown
+slack-table --wait -q --output markdown
+
 # Extract a table from an image.
 slack-table --image table.png
 ```
@@ -50,6 +55,19 @@ Data 2A	Data 2B
 ```
 
 Paste that into Slack to get a native Slack table.
+
+Use `--output markdown` to get padded Markdown instead, with the first row as
+the header:
+
+```md
+| Header A | Header B |
+| -------- | -------- |
+| Data 1A  | Data 1B  |
+| Data 2A  | Data 2B  |
+```
+
+Use `--output slack` to explicitly select the default Slack output. The output
+option works with every input mode and applies to both stdout and the clipboard.
 
 ## Install locally
 
@@ -79,8 +97,8 @@ PYTHONPATH=/path/to/slack-table/src python3 -m slack_table < table.md
 simple pipe-delimited rows. Use `--input markdown`, `--input cursor`,
 `--input csv`, `--input tsv`, or `--input pipe` to force a parser.
 
-Piped input and file input write TSV to stdout by default. Interactive clipboard
-input and `--wait` copy the converted TSV back to the clipboard by default.
+Piped input and file input write the selected format to stdout. Interactive
+clipboard input and `--wait` copy it back to the clipboard by default.
 
 Image input uses `--image path/to/table.png` and runs locally. Supported image
 files are PNG, JPEG, WEBP, and GIF. On macOS, the interactive clipboard modes
