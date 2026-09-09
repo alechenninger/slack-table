@@ -12,6 +12,7 @@ dependencies = ["tesserocr>=2.10"]
 
 [project.scripts]
 slack-table = "slack_table.cli:main"
+md-table = "slack_table.cli:markdown_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

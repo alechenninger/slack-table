@@ -33,6 +33,10 @@ slack-table table.md
 slack-table table.csv --output markdown
 slack-table --wait -q --output markdown
 
+# The md-table command defaults to Markdown with all the same options.
+md-table table.csv
+md-table --wait -q
+
 # Extract a table from an image.
 slack-table --image table.png
 ```
@@ -70,6 +74,8 @@ Use `--output slack` to explicitly select the default Slack output. The output
 option works with every input mode and applies to both stdout and the clipboard.
 
 ## Install locally
+
+Installing this package provides both `slack-table` and `md-table`.
 
 ```sh
 brew install tesseract

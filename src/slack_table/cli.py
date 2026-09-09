@@ -19,8 +19,17 @@ class CliError(RuntimeError):
     pass
 
 
-def main(argv: Optional[Iterable[str]] = None) -> int:
-    parser = _build_parser()
+def markdown_main(argv: Optional[Iterable[str]] = None) -> int:
+    return main(argv, prog="md-table", default_output="markdown")
+
+
+def main(
+    argv: Optional[Iterable[str]] = None,
+    *,
+    prog: str = "slack-table",
+    default_output: str = "slack",
+) -> int:
+    parser = _build_parser(prog=prog, default_output=default_output)
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
@@ -38,19 +47,21 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             print(output)
         return 0
     except (CliError, ClipboardError, ParseError) as exc:
-        print(f"slack-table: {exc}", file=sys.stderr)
+        print(f"{prog}: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("slack-table: interrupted", file=sys.stderr)
+        print(f"{prog}: interrupted", file=sys.stderr)
         return 130
 
 
 ClipboardError = clipboard.ClipboardError
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser(
+    *, prog: str = "slack-table", default_output: str = "slack"
+) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="slack-table",
+        prog=prog,
         description="Convert pasted or piped tables to Slack-native data or Markdown tables.",
     )
     parser.add_argument("files", nargs="*", help="table files to read; omit for stdin or clipboard")
@@ -63,8 +74,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         choices=["slack", "markdown"],
-        default="slack",
-        help="output format (default: slack)",
+        default=default_output,
+        help="output format (default: %(default)s)",
     )
     parser.add_argument(
         "-c",
