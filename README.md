@@ -99,9 +99,13 @@ PYTHONPATH=/path/to/slack-table/src python3 -m slack_table < table.md
 
 ## Input Formats
 
-`slack-table` auto-detects Markdown tables, Cursor canvas copies, TSV, CSV, and
-simple pipe-delimited rows. Use `--input markdown`, `--input cursor`,
-`--input csv`, `--input tsv`, or `--input pipe` to force a parser.
+`slack-table` auto-detects Markdown tables, Cursor canvas copies, Jira Rovo
+tables copied as blank-line-separated cells, TSV, CSV, and simple pipe-delimited
+rows. Use `--input markdown`, `--input cursor`,
+`--input csv`, `--input tsv`, `--input pipe`, or `--input spaced` to force a
+parser. When more than one column count fits blank-line-separated cells, the
+interactive command prompts with the valid choices; use `--columns N` to select
+one explicitly in scripts or pipelines.
 
 Piped input and file input write the selected format to stdout. Interactive
 clipboard input and `--wait` copy it back to the clipboard by default.

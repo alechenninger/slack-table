@@ -13,6 +13,15 @@ class ParseError(ValueError):
     """Raised when input cannot be parsed as a table."""
 
 
+class AmbiguousColumnsError(ParseError):
+    """Raised when a flat cell stream has multiple possible row widths."""
+
+    def __init__(self, candidates: Sequence[int]):
+        self.candidates = list(candidates)
+        choices = ", ".join(str(candidate) for candidate in candidates)
+        super().__init__(f"ambiguous column count; valid choices are {choices}")
+
+
 @dataclass(frozen=True)
 class Table:
     rows: List[List[str]]
@@ -22,18 +31,24 @@ class Table:
 _SEPARATOR_RE = re.compile(r"^:?-{3,}:?$")
 
 
-def render(text: str, input_format: str = "auto", output_format: str = "slack") -> str:
+def render(
+    text: str,
+    input_format: str = "auto",
+    output_format: str = "slack",
+    columns: Optional[int] = None,
+) -> str:
     """Parse text and format it for Slack (default) or Markdown."""
 
-    return format_table(parse_table(text, input_format), output_format)
+    return format_table(parse_table(text, input_format, columns), output_format)
 
 
-def parse_table(text: str, input_format: str = "auto") -> Table:
+def parse_table(text: str, input_format: str = "auto", columns: Optional[int] = None) -> Table:
     """Parse text as a table.
 
     Supported input formats are ``auto``, ``markdown``, ``csv``, ``tsv``,
-    ``pipe``, and ``cursor``. The parser list is intentionally small and
-    explicit so new formats can be added without touching the Slack renderer.
+    ``pipe``, ``cursor``, and ``spaced``. The parser list is intentionally
+    small and explicit so new formats can be added without touching the Slack
+    renderer.
     """
 
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
@@ -46,6 +61,7 @@ def parse_table(text: str, input_format: str = "auto") -> Table:
         "csv": _parse_csv,
         "tsv": _parse_tsv,
         "pipe": _parse_pipe,
+        "spaced": lambda value: _parse_spaced_cells(value, columns),
     }
 
     if input_format != "auto":
@@ -62,9 +78,12 @@ def parse_table(text: str, input_format: str = "auto") -> Table:
         _parse_tsv,
         _parse_csv,
         _parse_pipe,
+        lambda value: _parse_spaced_cells(value, columns),
     ):
         try:
             return parser(text)
+        except AmbiguousColumnsError:
+            raise
         except ParseError:
             pass
 
@@ -200,6 +219,41 @@ def _parse_cursor_canvas(text: str) -> Table:
     return Table(rows=_normalized(logical_rows, column_count), source_format="cursor")
 
 
+def _parse_spaced_cells(text: str, column_count: Optional[int] = None) -> Table:
+    """Parse row-major cells separated by blank lines.
+
+    Some generated Jira tables copy as a flat stream of cells. Blank lines
+    preserve cell boundaries, but the column count must be supplied or be
+    unambiguous from the number of cells.
+    """
+
+    blocks = re.split(r"\n[ \t]*\n+", text.strip())
+    if len(blocks) < 4 or any("\n" in block.strip() for block in blocks):
+        raise ParseError("no blank-line-separated cell stream found")
+
+    cells = [_clean_cell(block) for block in blocks]
+    candidates = [
+        candidate
+        for candidate in range(2, len(cells) // 2 + 1)
+        if len(cells) % candidate == 0
+    ]
+
+    if column_count is None:
+        if not candidates:
+            raise ParseError("could not infer rows from blank-line-separated cells")
+        if len(candidates) > 1:
+            raise AmbiguousColumnsError(candidates)
+        column_count = candidates[0]
+    elif column_count not in candidates:
+        raise ParseError(
+            f"{len(cells)} blank-line-separated cells cannot form "
+            f"multiple complete rows of {column_count} columns"
+        )
+
+    rows = [cells[index : index + column_count] for index in range(0, len(cells), column_count)]
+    return Table(rows=rows, source_format="spaced")
+
+
 def _parse_delimited(
     text: str,
     source_format: str,
@@ -207,7 +261,7 @@ def _parse_delimited(
 ) -> Table:
     rows = _read_delimited_rows(text, source_format, reader_factory)
 
-    if max(len(row) for row in rows) < 2:
+    if len(rows[0]) < 2:
         raise ParseError(f"{source_format} input must have at least two columns")
 
     return Table(rows=_normalized(rows), source_format=source_format)

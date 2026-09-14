@@ -11,7 +11,7 @@ from typing import Iterable, Optional
 
 from . import __version__
 from . import clipboard
-from .core import ParseError, Table, format_table, parse_table
+from .core import AmbiguousColumnsError, ParseError, Table, format_table, parse_table
 from .image import DEFAULT_IMAGE_ENGINE, DEFAULT_IMAGE_LANG, DEFAULT_IMAGE_PSM, parse_image_table
 
 
@@ -67,9 +67,15 @@ def _build_parser(
     parser.add_argument("files", nargs="*", help="table files to read; omit for stdin or clipboard")
     parser.add_argument(
         "--input",
-        choices=["auto", "markdown", "cursor", "csv", "tsv", "pipe"],
+        choices=["auto", "markdown", "cursor", "csv", "tsv", "pipe", "spaced"],
         default="auto",
         help="input format to parse (default: auto)",
+    )
+    parser.add_argument(
+        "--columns",
+        type=_column_count,
+        metavar="N",
+        help="column count for blank-line-separated cells; prompts if ambiguous",
     )
     parser.add_argument(
         "--output",
@@ -153,16 +159,16 @@ def _read_table(args: argparse.Namespace) -> tuple[Table, bool]:
         return _read_clipboard_table(args, require_image_support=True), True
 
     if args.files:
-        return parse_table(_read_files(args.files), input_format=args.input), False
+        return _parse_text(_read_files(args.files), args), False
 
     if not sys.stdin.isatty():
-        return parse_table(sys.stdin.read(), input_format=args.input), False
+        return _parse_text(sys.stdin.read(), args), False
 
     try:
         return _read_clipboard_table(args, require_image_support=False), True
     except CliError:
         _prompt_for_terminal_paste()
-        return parse_table(sys.stdin.read(), input_format=args.input), True
+        return _parse_text(sys.stdin.read(), args), True
 
 
 def _read_clipboard_table(args: argparse.Namespace, *, require_image_support: bool) -> Table:
@@ -176,7 +182,7 @@ def _read_clipboard_table(args: argparse.Namespace, *, require_image_support: bo
 
     if text.strip():
         try:
-            return parse_table(text, input_format=args.input)
+            return _parse_text(text, args)
         except ParseError as exc:
             text_error = exc
 
@@ -218,6 +224,43 @@ def _read_files(files: Iterable[str]) -> str:
         except (OSError, UnicodeError) as exc:
             raise CliError(str(exc)) from exc
     return "\n".join(chunks)
+
+
+def _parse_text(text: str, args: argparse.Namespace) -> Table:
+    try:
+        return parse_table(text, input_format=args.input, columns=getattr(args, "columns", None))
+    except AmbiguousColumnsError as exc:
+        if not sys.stdin.isatty():
+            raise CliError(f"{exc}; specify one with --columns N") from exc
+        columns = _prompt_for_column_count(exc.candidates)
+        return parse_table(text, input_format=args.input, columns=columns)
+
+
+def _prompt_for_column_count(candidates: Iterable[int]) -> int:
+    choices = list(candidates)
+    label = ", ".join(str(choice) for choice in choices)
+    while True:
+        print(f"Number of columns ({label}): ", end="", file=sys.stderr, flush=True)
+        response = sys.stdin.readline()
+        if not response:
+            raise CliError("no column count selected")
+        try:
+            selected = int(response)
+        except ValueError:
+            selected = 0
+        if selected in choices:
+            return selected
+        print(f"Choose one of: {label}.", file=sys.stderr)
+
+
+def _column_count(value: str) -> int:
+    try:
+        columns = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if columns < 2:
+        raise argparse.ArgumentTypeError("must be at least 2")
+    return columns
 
 
 def _read_clipboard() -> str:

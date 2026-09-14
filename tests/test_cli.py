@@ -7,6 +7,43 @@ from slack_table import cli
 
 
 class CliTests(unittest.TestCase):
+    def test_prompts_for_ambiguous_blank_line_separated_columns(self):
+        text = "\n\n".join(
+            [
+                "Component",
+                "Organization",
+                "Purpose",
+                "release-coordinator",
+                "example-labs",
+                "Coordinates releases",
+                "artifact-catalog",
+                "example-labs",
+                "Tracks artifacts",
+                "access-broker",
+                "example-labs",
+                "Manages credentials",
+            ]
+        )
+        args = argparse.Namespace(input="auto", columns=None)
+        stdin = io.StringIO("3\n")
+        stdin.isatty = lambda: True
+
+        with mock.patch.object(cli.sys, "stdin", stdin):
+            with mock.patch.object(cli.sys, "stderr", new_callable=io.StringIO) as stderr:
+                table = cli._parse_text(text, args)
+
+        self.assertEqual(table.rows[0], ["Component", "Organization", "Purpose"])
+        self.assertEqual(table.rows[1], ["release-coordinator", "example-labs", "Coordinates releases"])
+        self.assertEqual(stderr.getvalue(), "Number of columns (2, 3, 4, 6): ")
+
+    def test_noninteractive_ambiguous_columns_suggests_flag(self):
+        text = "\n\n".join(str(index) for index in range(12))
+        args = argparse.Namespace(input="auto", columns=None)
+
+        with mock.patch.object(cli.sys, "stdin", io.StringIO()):
+            with self.assertRaisesRegex(cli.CliError, r"2, 3, 4, 6; specify one with --columns N"):
+                cli._parse_text(text, args)
+
     def test_output_selection_from_stdin(self):
         for flags in ([], ["--output", "slack"], ["--output", "markdown"]):
             with self.subTest(flags=flags):

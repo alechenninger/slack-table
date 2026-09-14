@@ -1,6 +1,15 @@
 import unittest
 
-from slack_table.core import ParseError, Table, format_markdown, format_table, format_tsv, parse_table, render
+from slack_table.core import (
+    AmbiguousColumnsError,
+    ParseError,
+    Table,
+    format_markdown,
+    format_table,
+    format_tsv,
+    parse_table,
+    render,
+)
 
 
 class CoreTests(unittest.TestCase):
@@ -124,6 +133,51 @@ class CoreTests(unittest.TestCase):
             "Scenario B\t2.0 ms\t2.1 ms\t2.6 ms\n"
             "Scenario C\t3.1 ms\t3.3 ms\t5.3 ms",
         )
+
+    def test_auto_detects_blank_line_separated_cells(self):
+        text = """Component
+
+Organization
+
+Purpose
+
+release-coordinator
+
+example-labs
+
+Coordinates staged releases, pre-deployment checks, and post-deployment checks
+
+artifact-catalog
+
+example-labs
+
+Tracks deployable artifact versions
+
+workspace-provisioner
+
+example-labs
+
+Creates workspaces and assigns them to groups
+
+access-broker
+
+example-labs
+
+Manages credentials used during workspace provisioning"""
+
+        self.assertEqual(
+            render(text, columns=3),
+            "Component\tOrganization\tPurpose\n"
+            "release-coordinator\texample-labs\t"
+            "Coordinates staged releases, pre-deployment checks, and post-deployment checks\n"
+            "artifact-catalog\texample-labs\tTracks deployable artifact versions\n"
+            "workspace-provisioner\texample-labs\tCreates workspaces and assigns them to groups\n"
+            "access-broker\texample-labs\tManages credentials used during workspace provisioning",
+        )
+
+        with self.assertRaises(AmbiguousColumnsError) as raised:
+            parse_table(text)
+        self.assertEqual(raised.exception.candidates, [3, 5])
 
     def test_parses_escaped_markdown_pipes(self):
         table = parse_table(
